@@ -1,3 +1,4 @@
+#include <chrono>
 #include "ssh2.hpp"
 #include "spdlog/spdlog.h"
 #include "WS2tcpip.h"
@@ -24,7 +25,7 @@ std::string Ssh2Channel::Read(const std::string str_end, int timeout)
     auto fds = new LIBSSH2_POLLFD[1];
     fds[0].type = LIBSSH2_POLLFD_CHANNEL;
     fds[0].fd.channel = channel_;
-    fds[0].events = LIBSSH2_POLLFD_POLLIN | LIBSSH2_POLLFD_POLLOUT;
+    fds[0].events = LIBSSH2_POLLFD_POLLIN;
 
     while (timeout > 0)
     {
@@ -37,8 +38,9 @@ std::string Ssh2Channel::Read(const std::string str_end, int timeout)
 
         if (fds[0].revents & LIBSSH2_POLLFD_POLLIN)
         {
-            auto buffer = new char[64 * 1024];
+            char buffer[64 * 1024] = {0};
             size_t n = libssh2_channel_read(channel_, buffer, sizeof(buffer));
+            spdlog::info("{}", n);
             if (n == LIBSSH2_ERROR_EAGAIN)
             {
                 timeout -= 50;
