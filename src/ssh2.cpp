@@ -7,6 +7,7 @@
 Ssh2Channel::Ssh2Channel(LIBSSH2_CHANNEL *channel)
     : channel_(channel)
 {
+    spdlog::info("channel created");
 }
 
 Ssh2Channel::~Ssh2Channel()
@@ -18,7 +19,7 @@ Ssh2Channel::~Ssh2Channel()
     }
 }
 
-std::string Ssh2Channel::Read(const std::string str_end, int timeout)
+std::string Ssh2Channel::Read(int timeout, const std::string str_end)
 {
     std::string data;
 
@@ -58,6 +59,26 @@ std::string Ssh2Channel::Read(const std::string str_end, int timeout)
     }
 
     spdlog::error("read timeout");
+
+    return data;
+}
+
+std::string Ssh2Channel::Read()
+{
+    std::string data;
+
+    // libssh2_channel_set_blocking(channel_, 0);
+    // 如何处理libssh2_channel_read的阻塞状态
+    while (true)
+    {
+        char buffer[64 * 1024] = {0};
+        spdlog::info("before read: {}");
+        auto n = libssh2_channel_read(channel_, buffer, sizeof(buffer));
+        spdlog::info("after read: {}", n);
+        if (n <= 0 && n != LIBSSH2_ERROR_EAGAIN)
+            break;
+        data += buffer;
+    }
 
     return data;
 }
@@ -108,6 +129,8 @@ bool Ssh2Client::Connect(const std::string &username, const std::string &passwor
         return false;
     }
 
+    spdlog::info("socket connected to {}:{}", server_ip_, server_port_);
+
     session_ = libssh2_session_init();
     // libssh2_session_set_blocking(session_, 1);
     if (libssh2_session_handshake(session_, socket_fd_) != 0)
@@ -142,6 +165,8 @@ bool Ssh2Client::Connect(const std::string &username, const std::string &passwor
         Disconnect();
         return false;
     }
+
+    spdlog::info("ssh authoricated with username {}", username);
 
     return true;
 }

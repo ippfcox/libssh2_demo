@@ -11,7 +11,8 @@ public:
     Ssh2Channel(const Ssh2Channel &) = delete;
     Ssh2Channel operator=(const Ssh2Channel &) = delete;
 
-    std::string Read(const std::string str_end = "$", int timeout = 3000);
+    std::string Read(int timeout, const std::string str_end = "$");
+    std::string Read();
     bool Write(const std::string &data);
 
 private:
