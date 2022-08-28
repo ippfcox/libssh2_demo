@@ -10,20 +10,22 @@ int main()
         return -1;
     }
 
-    auto channel = ssh.CreateChannel("xterm-256color");
+    auto channel = ssh.CreateChannel([](std::string data)
+                                     { spdlog::info(data); },
+                                     "xterm-256color");
     if (!channel)
     {
         spdlog::error("CreateChannel failed");
         return -1;
     }
 
-    if (!channel->Write("ls -la\n"))
+    if (!channel->Write("top\n"))
     {
         spdlog::error("Write failed");
         return -1;
     }
 
-    spdlog::info(channel->Read());
+    channel->Wait();
 
     delete channel;
 

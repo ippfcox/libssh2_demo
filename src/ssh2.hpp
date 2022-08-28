@@ -1,22 +1,27 @@
 #pragma once
 #include <string>
+#include <thread>
+#include <functional>
 #include "WinSock2.h"
 #include "libssh2.h"
 
 class Ssh2Channel
 {
 public:
-    Ssh2Channel(LIBSSH2_CHANNEL *channel);
+    Ssh2Channel(LIBSSH2_CHANNEL *channel, std::function<void(std::string)> write_func);
     ~Ssh2Channel();
     Ssh2Channel(const Ssh2Channel &) = delete;
     Ssh2Channel operator=(const Ssh2Channel &) = delete;
 
-    std::string Read(int timeout, const std::string str_end = "$");
-    std::string Read();
     bool Write(const std::string &data);
+    void Wait();
 
 private:
+    void Read();
+
+    std::thread reader_;
     LIBSSH2_CHANNEL *channel_;
+    std::function<void(std::string)> write_func_;
 };
 
 class Ssh2Client
@@ -28,7 +33,7 @@ public:
     bool Connect(const std::string &username, const std::string &password);
     bool Disconnect();
 
-    Ssh2Channel *CreateChannel(const std::string &pty_type = "vanilla");
+    Ssh2Channel *CreateChannel(std::function<void(std::string)> write_func, const std::string &pty_type = "vanilla");
 
 private:
     std::string server_ip_;

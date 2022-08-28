@@ -4,10 +4,12 @@
 #include "WS2tcpip.h"
 
 // channel不是在这创建的却要在这销毁，合适吗
-Ssh2Channel::Ssh2Channel(LIBSSH2_CHANNEL *channel)
-    : channel_(channel)
+Ssh2Channel::Ssh2Channel(LIBSSH2_CHANNEL *channel, std::function<void(std::string)> write_func)
+    : channel_(channel), write_func_(write_func)
 {
     spdlog::info("channel created");
+    reader_ = std::thread([this]()
+                          { Read(); });
 }
 
 Ssh2Channel::~Ssh2Channel()
@@ -19,73 +21,34 @@ Ssh2Channel::~Ssh2Channel()
     }
 }
 
-std::string Ssh2Channel::Read(int timeout, const std::string str_end)
+void Ssh2Channel::Read()
 {
-    std::string data;
+    libssh2_channel_set_blocking(channel_, 0);
 
-    auto fds = new LIBSSH2_POLLFD[1];
-    fds[0].type = LIBSSH2_POLLFD_CHANNEL;
-    fds[0].fd.channel = channel_;
-    fds[0].events = LIBSSH2_POLLFD_POLLIN;
-
-    while (timeout > 0)
-    {
-        if (libssh2_poll(fds, 1, 10) < 1)
-        {
-            timeout -= 50;
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            continue;
-        }
-
-        if (fds[0].revents & LIBSSH2_POLLFD_POLLIN)
-        {
-            char buffer[64 * 1024] = {0};
-            size_t n = libssh2_channel_read(channel_, buffer, sizeof(buffer));
-            spdlog::info("{}", n);
-            if (n == LIBSSH2_ERROR_EAGAIN)
-            {
-                timeout -= 50;
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            }
-            else if (n <= 0)
-            {
-                return data;
-            }
-            else
-            {
-                data += std::string(buffer);
-            }
-        }
-    }
-
-    spdlog::error("read timeout");
-
-    return data;
-}
-
-std::string Ssh2Channel::Read()
-{
-    std::string data;
-
-    // libssh2_channel_set_blocking(channel_, 0);
-    // 如何处理libssh2_channel_read的阻塞状态
     while (true)
     {
         char buffer[64 * 1024] = {0};
-        spdlog::info("before read: {}");
         auto n = libssh2_channel_read(channel_, buffer, sizeof(buffer));
-        spdlog::info("after read: {}", n);
-        if (n <= 0 && n != LIBSSH2_ERROR_EAGAIN)
-            break;
-        data += buffer;
+        if (n == LIBSSH2_ERROR_EAGAIN)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        else if (n < 0)
+        {
+            spdlog::error("libssh2_channel_read failed: {}", n);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        else
+            write_func_(std::string(buffer));
     }
-
-    return data;
 }
 
 bool Ssh2Channel::Write(const std::string &data)
 {
     return libssh2_channel_write(channel_, data.c_str(), data.size());
+}
+
+void Ssh2Channel::Wait()
+{
+    reader_.join();
 }
 
 Ssh2Client::Ssh2Client(const std::string &server_ip, const int server_port)
@@ -189,7 +152,7 @@ bool Ssh2Client::Disconnect()
     return true;
 }
 
-Ssh2Channel *Ssh2Client::CreateChannel(const std::string &pty_type)
+Ssh2Channel *Ssh2Client::CreateChannel(std::function<void(std::string)> write_func, const std::string &pty_type)
 {
     auto channel = libssh2_channel_open_session(session_);
     if (!channel)
@@ -212,5 +175,5 @@ Ssh2Channel *Ssh2Client::CreateChannel(const std::string &pty_type)
         return nullptr;
     }
 
-    return new Ssh2Channel(channel);
+    return new Ssh2Channel(channel, write_func);
 }
